@@ -18,12 +18,12 @@ body {
     justify-content: center;
     align-items: center;
 }
-/* Responsive scale for mobile with a desktop clamp constraint */
+/* Responsive scale with desktop sizing limits */
 canvas {
     display: block;
     width: 92vmin;
     height: 92vmin;
-    max-width: 580px; /* Clamps desktop size so it looks comfortable on PC */
+    max-width: 580px; 
     max-height: 580px;
     object-fit: contain;
     filter: drop-shadow(0 20px 50px rgba(180, 40, 90, 0.25));
@@ -48,7 +48,7 @@ const data32 = new Uint32Array(imgData.data.buffer);
 
 // Optimal scale and vertical positioning to prevent boundary clipping
 const MASTER_SCALE = 1.16;
-const CENTER_Y = 305; 
+const CENTER_Y = 345; 
 
 // Endianness detection
 const isLittleEndian = (() => {
@@ -59,26 +59,46 @@ const isLittleEndian = (() => {
     return buf8[0] === 0x04;
 })();
 
-const packColor = isLittleEndian
-    ? (r, g, b, a) => (a << 24) | (b << 16) | (g << 8) | r
-    : (r, g, b, a) => (r << 24) | (g << 16) | (b << 8) | a;
-
+// Highly optimized rect drawer using fast clamps and loop unrolling for size 1/2
 function drawRect(startX, startY, size, r, g, b, a) {
-    const x0 = startX < 0 ? 0 : (startX > 650 ? 650 : Math.floor(startX));
-    const y0 = startY < 0 ? 0 : (startY > 650 ? 650 : Math.floor(startY));
-    const x1 = (startX + size) < 0 ? 0 : ((startX + size) > 650 ? 650 : Math.floor(startX + size));
-    const y1 = (startY + size) < 0 ? 0 : ((startY + size) > 650 ? 650 : Math.floor(startY + size));
+    let x0 = startX | 0;
+    let y0 = startY | 0;
+    let x1 = (startX + size) | 0;
+    let y1 = (startY + size) | 0;
     
-    const ru = r < 0 ? 0 : (r > 255 ? 255 : Math.floor(r));
-    const gu = g < 0 ? 0 : (g > 255 ? 255 : Math.floor(g));
-    const bu = b < 0 ? 0 : (b > 255 ? 255 : Math.floor(b));
-    const au = a < 0 ? 0 : (a > 255 ? 255 : Math.floor(a));
+    if (x0 < 0) x0 = 0; else if (x0 > 650) x0 = 650;
+    if (y0 < 0) y0 = 0; else if (y0 > 650) y0 = 650;
+    if (x1 < 0) x1 = 0; else if (x1 > 650) x1 = 650;
+    if (y1 < 0) y1 = 0; else if (y1 > 650) y1 = 650;
     
-    const c32 = packColor(ru, gu, bu, au);
-    for (let y = y0; y < y1; y++) {
-        const rowOffset = y * 650;
-        for (let x = x0; x < x1; x++) {
-            data32[rowOffset + x] = c32;
+    const dx = x1 - x0;
+    const dy = y1 - y0;
+    if (dx <= 0 || dy <= 0) return;
+    
+    let ru = r | 0; if (ru < 0) ru = 0; else if (ru > 255) ru = 255;
+    let gu = g | 0; if (gu < 0) gu = 0; else if (gu > 255) gu = 255;
+    let bu = b | 0; if (bu < 0) bu = 0; else if (bu > 255) bu = 255;
+    let au = a | 0; if (au < 0) au = 0; else if (au > 255) au = 255;
+    
+    const c32 = isLittleEndian
+        ? (au << 24) | (bu << 16) | (gu << 8) | ru
+        : (ru << 24) | (gu << 16) | (bu << 8) | au;
+        
+    if (dx === 1 && dy === 1) {
+        data32[y0 * 650 + x0] = c32;
+    } else if (dx === 2 && dy === 2) {
+        const row0 = y0 * 650;
+        const row1 = row0 + 650;
+        data32[row0 + x0] = c32;
+        data32[row0 + x0 + 1] = c32;
+        data32[row1 + x0] = c32;
+        data32[row1 + x0 + 1] = c32;
+    } else {
+        for (let y = y0; y < y1; y++) {
+            const rowOffset = y * 650;
+            for (let x = x0; x < x1; x++) {
+                data32[rowOffset + x] = c32;
+            }
         }
     }
 }
