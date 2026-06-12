@@ -2,23 +2,30 @@
 <html>
 <head>
 <meta charset="UTF-8">
+<!-- Crucial viewport meta tag to force correct native sizing on mobile screens -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>هدية</title>
 <style>
-body {
+html, body {
+    width: 100%;
+    height: 100%;
     margin: 0;
+    padding: 0;
+    overflow: hidden;
+}
+body {
     background: radial-gradient(circle at center, #fff6f9 0%, #ffdce8 50%, #f7abc9 100%);
     display: flex;
     justify-content: center;
     align-items: center;
-    height: 100vh;
-    overflow: hidden;
 }
-/* Maximized canvas viewport sizing to fill almost the entire screen width on mobile */
+/* Scales the canvas to perfectly fill the narrowest screen dimension on mobile */
 canvas {
+    display: block;
+    width: 98vmin;
+    height: 98vmin;
     max-width: 100vw;
     max-height: 100vh;
-    width: 96vmin;
-    height: 96vmin;
     object-fit: contain;
     filter: drop-shadow(0 20px 50px rgba(180, 40, 90, 0.25));
 }
@@ -40,7 +47,6 @@ const offscreenCtx = offscreenCanvas.getContext("2d");
 const imgData = offscreenCtx.createImageData(650, 650);
 const data32 = new Uint32Array(imgData.data.buffer);
 
-// Master internal scaling factor to remove empty canvas margins
 const MASTER_SCALE = 1.28;
 
 // Endianness detection
@@ -362,7 +368,7 @@ function draw() {
         ctx.fill();
     }
     
-    // STEM Calculations (Scaled up by MASTER_SCALE)
+    // STEM Calculations
     for(let i = 0; i < STEM_COUNT; i++) {
         let seed = targetSeeds[FLOWER_COUNT + i];
         let stemT = seed.index / seed.total;
@@ -432,7 +438,7 @@ function draw() {
         drawRect(x, y, size * 1.1, red, green, blue, 217);
     }
     
-    // LEAVES Calculations (Scaled up by MASTER_SCALE)
+    // LEAVES Calculations
     for(let i = 0; i < LEAF_COUNT; i++) {
         let seed = targetSeeds[FLOWER_COUNT + STEM_COUNT + i];
         let leafT = seed.index / seed.total;
@@ -492,7 +498,7 @@ function draw() {
         drawRect(x, y, size * 1.1, red, green, blue, 217);
     }
     
-    // FLOWER Calculations (Scaled up by MASTER_SCALE)
+    // FLOWER Calculations
     const now0028 = now * 0.0028;
     const now0015 = now * 0.0015;
     const now0012 = now * 0.0012;
@@ -650,7 +656,7 @@ function draw() {
         let renderObj = flowerRenderPool[i];
         renderObj.x = x;
         renderObj.y = y;
-        renderObj.size = size * 1.1; // Slightly larger pixel density to fill boundaries
+        renderObj.size = size * 1.1; 
         renderObj.r = rVal;
         renderObj.g = gVal;
         renderObj.b = bVal;
