@@ -13,12 +13,12 @@ body {
     height: 100vh;
     overflow: hidden;
 }
-/* Responsive canvas sizing to ensure it fills mobile screens beautifully */
+/* Maximized canvas viewport sizing to fill almost the entire screen width on mobile */
 canvas {
-    max-width: 95vw;
-    max-height: 95vh;
-    width: 85vmin;
-    height: 85vmin;
+    max-width: 100vw;
+    max-height: 100vh;
+    width: 96vmin;
+    height: 96vmin;
     object-fit: contain;
     filter: drop-shadow(0 20px 50px rgba(180, 40, 90, 0.25));
 }
@@ -39,6 +39,9 @@ offscreenCanvas.height = 650;
 const offscreenCtx = offscreenCanvas.getContext("2d");
 const imgData = offscreenCtx.createImageData(650, 650);
 const data32 = new Uint32Array(imgData.data.buffer);
+
+// Master internal scaling factor to remove empty canvas margins
+const MASTER_SCALE = 1.28;
 
 // Endianness detection
 const isLittleEndian = (() => {
@@ -225,19 +228,18 @@ function generateCloudCoordinate() {
     };
 }
 
-// Raised baseline brightness of base cloud points to prevent dark/black spots
 const precalculatedCloudColors = [];
 for (let i = 0; i < TOTAL_COUNT + 1000; i++) {
     let r, g, b;
     let mix = Math.sin(i * 0.08); 
     if (mix < -0.4) {
-        r = 190; g = 20; b = 50;     // Glowing velvet crimson
+        r = 190; g = 20; b = 50;     
     } else if (mix < 0.2) {
-        r = 255; g = 85; b = 130;    // Vibrant rose pink
+        r = 255; g = 85; b = 130;    
     } else if (mix < 0.7) {
-        r = 255; g = 150; b = 185;   // Radiant bright pink
+        r = 255; g = 150; b = 185;   
     } else {
-        r = 255; g = 215; b = 195;   // Warm peach gold
+        r = 255; g = 215; b = 195;   
     }
     precalculatedCloudColors.push({ r, g, b });
 }
@@ -360,7 +362,7 @@ function draw() {
         ctx.fill();
     }
     
-    // STEM Calculations
+    // STEM Calculations (Scaled up by MASTER_SCALE)
     for(let i = 0; i < STEM_COUNT; i++) {
         let seed = targetSeeds[FLOWER_COUNT + i];
         let stemT = seed.index / seed.total;
@@ -377,12 +379,12 @@ function draw() {
         const scale = 200;
         const distance = 4;
         const perspective = scale / (distance - rz);
-        let px = 325 + rx * 0.3 * perspective;
-        let py = 325 - ry * 0.3 * perspective;
+        let px = 325 + (rx * 0.3 * perspective) * MASTER_SCALE;
+        let py = 265 - (ry * 0.3 * perspective) * MASTER_SCALE;
         
         populateDynamicStem(seed.index, seed.total, now, stemCoordsRec);
-        let tx = 325 + stemCoordsRec.x;
-        let ty = 325 + stemCoordsRec.y;
+        let tx = 325 + stemCoordsRec.x * MASTER_SCALE;
+        let ty = 265 + (stemCoordsRec.y + 60) * MASTER_SCALE;
         
         const swoopFactor = Math.sin(localEased * Math.PI);
         const arcDirection = (Math.sin(seed.index * 2.7) > 0 ? 1 : -1);
@@ -427,10 +429,10 @@ function draw() {
         const sizePulse = swoopFactor * 1.2;
         let size = (3.0 * (1 - localEased)) + 2.6 + sizePulse;
         
-        drawRect(x, y, size, red, green, blue, 217);
+        drawRect(x, y, size * 1.1, red, green, blue, 217);
     }
     
-    // LEAVES Calculations
+    // LEAVES Calculations (Scaled up by MASTER_SCALE)
     for(let i = 0; i < LEAF_COUNT; i++) {
         let seed = targetSeeds[FLOWER_COUNT + STEM_COUNT + i];
         let leafT = seed.index / seed.total;
@@ -447,12 +449,12 @@ function draw() {
         const scale = 200;
         const distance = 4;
         const perspective = scale / (distance - rz);
-        let px = 325 + rx * 0.2 * perspective;
-        let py = 325 - ry * 0.2 * perspective;
+        let px = 325 + (rx * 0.2 * perspective) * MASTER_SCALE;
+        let py = 265 - (ry * 0.2 * perspective) * MASTER_SCALE;
         
         populateDynamicLeaf(seed.index, seed.total, now, leafCoordsRec);
-        let tx = 325 + leafCoordsRec.x;
-        let ty = 325 + leafCoordsRec.y;
+        let tx = 325 + leafCoordsRec.x * MASTER_SCALE;
+        let ty = 265 + (leafCoordsRec.y + 60) * MASTER_SCALE;
         
         const swoopFactor = Math.sin(localEased * Math.PI);
         const arcDirection = (Math.sin(seed.index * 1.9) > 0 ? 1 : -1);
@@ -487,10 +489,10 @@ function draw() {
         const sizePulse = swoopFactor * 1.2;
         let size = (3.0 * (1 - localEased)) + 2.1 + sizePulse;
         
-        drawRect(x, y, size, red, green, blue, 217);
+        drawRect(x, y, size * 1.1, red, green, blue, 217);
     }
     
-    // FLOWER Calculations
+    // FLOWER Calculations (Scaled up by MASTER_SCALE)
     const now0028 = now * 0.0028;
     const now0015 = now * 0.0015;
     const now0012 = now * 0.0012;
@@ -511,12 +513,12 @@ function draw() {
         const scale = 200;
         const distance = 4;
         const perspective = scale / (distance - rz);
-        let px = 325 + rx * perspective;
-        let py = 325 - ry * perspective;
+        let px = 325 + (rx * perspective) * MASTER_SCALE;
+        let py = 265 - (ry * perspective) * MASTER_SCALE;
         
         populateDynamicRose(seed.seed, now, tempTargetRec);
-        let tx = 325 + tempTargetRec.x;
-        let ty = 325 + tempTargetRec.y;
+        let tx = 325 + tempTargetRec.x * MASTER_SCALE;
+        let ty = 265 + (tempTargetRec.y + 60) * MASTER_SCALE;
         
         let x = px * (1 - localEased) + tx * localEased;
         let y = py * (1 - localEased) + ty * localEased;
@@ -567,7 +569,6 @@ function draw() {
         
         let rVal, gVal, bVal, alpha;
         
-        // Luminous color bands
         if (petalCurvature < 0.05) {
             let t = petalCurvature / 0.05;
             rVal = 170 * (1 - t) + 215 * t;
@@ -611,7 +612,6 @@ function draw() {
         gVal += waveLuminance * 0.4;
         bVal += waveLuminance * 0.7;
         
-        // Deep shadows
         if (centerRatio < 0.35) {
             let coreT = centerRatio / 0.35;
             rVal = rVal * (0.45 + 0.55 * coreT); 
@@ -629,11 +629,9 @@ function draw() {
         gVal = cloudCol.g * (1 - localEased) + gVal * localEased;
         bVal = cloudCol.b * (1 - localEased) + bVal * localEased;
         
-        // --- STRICT VIBRANCY FLOOR CLAMP ---
-        // Prevents any point in the core from becoming muddy or near-black
-        if (rVal < 155) rVal = 155; // Warm Crimson Red minimum
-        if (gVal < 25) gVal = 25;   // Deep Rose Pink green-element minimum
-        if (bVal < 50) bVal = 50;   // Royal Magenta blue-element minimum
+        if (rVal < 155) rVal = 155; 
+        if (gVal < 25) gVal = 25;   
+        if (bVal < 50) bVal = 50;   
 
         let dofFactor = (rz + 1.5) / 3.0; 
         let size = 1.35 + dofFactor * 1.45 + (light + microDetail) * 0.4;
@@ -652,7 +650,7 @@ function draw() {
         let renderObj = flowerRenderPool[i];
         renderObj.x = x;
         renderObj.y = y;
-        renderObj.size = size;
+        renderObj.size = size * 1.1; // Slightly larger pixel density to fill boundaries
         renderObj.r = rVal;
         renderObj.g = gVal;
         renderObj.b = bVal;
