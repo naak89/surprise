@@ -13,7 +13,13 @@ body {
     height: 100vh;
     overflow: hidden;
 }
+/* Responsive canvas sizing to ensure it fills mobile screens beautifully */
 canvas {
+    max-width: 95vw;
+    max-height: 95vh;
+    width: 85vmin;
+    height: 85vmin;
+    object-fit: contain;
     filter: drop-shadow(0 20px 50px rgba(180, 40, 90, 0.25));
 }
 </style>
@@ -26,7 +32,7 @@ canvas {
 const canvas = document.getElementById("rose");
 const ctx = canvas.getContext("2d");
 
-// Create offscreen canvas for fast pixel manipulation
+// Offscreen canvas setup
 const offscreenCanvas = document.createElement("canvas");
 offscreenCanvas.width = 650;
 offscreenCanvas.height = 650;
@@ -34,7 +40,7 @@ const offscreenCtx = offscreenCanvas.getContext("2d");
 const imgData = offscreenCtx.createImageData(650, 650);
 const data32 = new Uint32Array(imgData.data.buffer);
 
-// Endianness detection for fast color packing
+// Endianness detection
 const isLittleEndian = (() => {
     const buf = new ArrayBuffer(4);
     const buf8 = new Uint8Array(buf);
@@ -47,7 +53,6 @@ const packColor = isLittleEndian
     ? (r, g, b, a) => (a << 24) | (b << 16) | (g << 8) | r
     : (r, g, b, a) => (r << 24) | (g << 16) | (b << 8) | a;
 
-// Fast clamping boundary helper for raw buffer drawing
 function drawRect(startX, startY, size, r, g, b, a) {
     const x0 = startX < 0 ? 0 : (startX > 650 ? 650 : Math.floor(startX));
     const y0 = startY < 0 ? 0 : (startY > 650 ? 650 : Math.floor(startY));
@@ -220,17 +225,19 @@ function generateCloudCoordinate() {
     };
 }
 
-// Precalculate static cloud colors to eliminate runtime object allocation overhead
+// Raised baseline brightness of base cloud points to prevent dark/black spots
 const precalculatedCloudColors = [];
 for (let i = 0; i < TOTAL_COUNT + 1000; i++) {
     let r, g, b;
     let mix = Math.sin(i * 0.08); 
-    if (mix < -0.3) {
-        r = 150; g = 15; b = 35;
-    } else if (mix < 0.3) {
-        r = 255; g = 110; b = 150;
+    if (mix < -0.4) {
+        r = 190; g = 20; b = 50;     // Glowing velvet crimson
+    } else if (mix < 0.2) {
+        r = 255; g = 85; b = 130;    // Vibrant rose pink
+    } else if (mix < 0.7) {
+        r = 255; g = 150; b = 185;   // Radiant bright pink
     } else {
-        r = 255; g = 180; b = 200;
+        r = 255; g = 215; b = 195;   // Warm peach gold
     }
     precalculatedCloudColors.push({ r, g, b });
 }
@@ -286,7 +293,6 @@ for (let i = 0; i < FLOWER_COUNT; i++) {
     flowerRenderPool.push({ x: 0, y: 0, size: 0, r: 0, g: 0, b: 0, a: 0, isHighlight: false });
 }
 
-// Depth sorting bins - fast linear-time sorting
 const BUCKET_COUNT = 120;
 const bucketLists = Array.from({ length: BUCKET_COUNT }, () => new Int32Array(FLOWER_COUNT));
 const bucketSizes = new Int32Array(BUCKET_COUNT);
@@ -304,7 +310,6 @@ function getLocalProgress(global, start, end) {
 let frameCount = 0;
 
 function draw() {
-    // Clear back buffer (fully transparent)
     data32.fill(0);
     
     const now = performance.now();
@@ -322,14 +327,16 @@ function draw() {
     const activeGlobalAngle = elapsed * 0.00025;
     let bob = Math.sin(elapsed * 0.0018) * 12 * Math.pow(1 - morphProgress, 1.5);
 
-    // Draw base glows and elements directly to screen context
+    const breath = 1 + 0.03 * Math.sin(now * 0.0012); 
+    const windSway = Math.sin(now * 0.001) * 8; 
+
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     if (morphProgress > 0.05) {
-        let pulseGlow = 140 + 15 * Math.sin(now * 0.0015);
+        let pulseGlow = 145 + 18 * Math.sin(now * 0.0015);
         let grad = ctx.createRadialGradient(canvas.width / 2, canvas.height / 2 - 60, 10, canvas.width / 2, canvas.height / 2 - 60, pulseGlow);
-        grad.addColorStop(0, `rgba(255, 225, 235, ${0.15 * morphProgress})`);
-        grad.addColorStop(0.5, `rgba(255, 182, 193, ${0.06 * morphProgress})`);
+        grad.addColorStop(0, `rgba(255, 215, 230, ${0.18 * morphProgress})`);
+        grad.addColorStop(0.5, `rgba(255, 160, 185, ${0.07 * morphProgress})`);
         grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
         ctx.fillStyle = grad;
         ctx.beginPath();
@@ -353,7 +360,7 @@ function draw() {
         ctx.fill();
     }
     
-    // STEM Calculations and buffer drawing
+    // STEM Calculations
     for(let i = 0; i < STEM_COUNT; i++) {
         let seed = targetSeeds[FLOWER_COUNT + i];
         let stemT = seed.index / seed.total;
@@ -392,6 +399,10 @@ function draw() {
         let jitterY = Math.cos(now * 0.0030 + seed.index * 11) * 0.7;
         x += jitterX;
         y += jitterY;
+
+        if (localEased > 0.1) {
+            x += windSway * (localEased) * 0.7;
+        }
         
         let dx = stemCoordsRec.x;
         let dy = stemCoordsRec.y + 60;
@@ -405,13 +416,13 @@ function draw() {
         
         let cloudCol = precalculatedCloudColors[seed.index];
         let greenVar = Math.sin(seed.index * 0.08 + now * 0.001) * 18;
-        let targetGreen = 110 + greenVar;
-        let targetRed = 45 + greenVar * 0.4;
-        let targetBlue = 55 + greenVar * 0.3;
+        let targetGreen = 135 + greenVar;
+        let targetRed = 25 + greenVar * 0.2;
+        let targetBlue = 45 + greenVar * 0.3;
         
-        let red = cloudCol.r * (1 - localEased) + targetRed * localEased;
-        let green = cloudCol.g * (1 - localEased) + targetGreen * localEased;
-        let blue = cloudCol.b * (1 - localEased) + targetBlue * localEased;
+        let red = Math.max(40, cloudCol.r * (1 - localEased) + targetRed * localEased);
+        let green = Math.max(80, cloudCol.g * (1 - localEased) + targetGreen * localEased);
+        let blue = Math.max(50, cloudCol.b * (1 - localEased) + targetBlue * localEased);
         
         const sizePulse = swoopFactor * 1.2;
         let size = (3.0 * (1 - localEased)) + 2.6 + sizePulse;
@@ -419,7 +430,7 @@ function draw() {
         drawRect(x, y, size, red, green, blue, 217);
     }
     
-    // LEAVES Calculations and buffer drawing
+    // LEAVES Calculations
     for(let i = 0; i < LEAF_COUNT; i++) {
         let seed = targetSeeds[FLOWER_COUNT + STEM_COUNT + i];
         let leafT = seed.index / seed.total;
@@ -458,16 +469,20 @@ function draw() {
         let jitterY = Math.cos(now * 0.0028 + seed.index * 8) * 0.7;
         x += jitterX;
         y += jitterY;
+
+        if (localEased > 0.1) {
+            x += windSway * 0.85;
+        }
         
         let cloudCol = precalculatedCloudColors[seed.index + 200];
         let leafVar = Math.sin(seed.index * 0.05 + now * 0.001) * 15;
-        let targetGreen = 135 + leafVar;
-        let targetRed = 55 + leafVar * 0.3;
-        let targetBlue = 70 + leafVar * 0.25;
+        let targetGreen = 155 + leafVar;
+        let targetRed = 30 + leafVar * 0.2;
+        let targetBlue = 55 + leafVar * 0.3;
         
-        let red = cloudCol.r * (1 - localEased) + targetRed * localEased;
-        let green = cloudCol.g * (1 - localEased) + targetGreen * localEased;
-        let blue = cloudCol.b * (1 - localEased) + targetBlue * localEased;
+        let red = Math.max(40, cloudCol.r * (1 - localEased) + targetRed * localEased);
+        let green = Math.max(85, cloudCol.g * (1 - localEased) + targetGreen * localEased);
+        let blue = Math.max(55, cloudCol.b * (1 - localEased) + targetBlue * localEased);
         
         const sizePulse = swoopFactor * 1.2;
         let size = (3.0 * (1 - localEased)) + 2.1 + sizePulse;
@@ -475,7 +490,7 @@ function draw() {
         drawRect(x, y, size, red, green, blue, 217);
     }
     
-    // FLOWER Calculations and depth-bin sorting
+    // FLOWER Calculations
     const now0028 = now * 0.0028;
     const now0015 = now * 0.0015;
     const now0012 = now * 0.0012;
@@ -531,6 +546,13 @@ function draw() {
         let jitterY = Math.cos(now * 0.0035 + seed.seed * 7) * 0.75;
         x += jitterX;
         y += jitterY;
+
+        if (localEased > 0.5) {
+            let cx = 325;
+            let cy = 265;
+            x = cx + (x - cx) * breath + windSway * (localEased - 0.5) * 2;
+            y = cy + (y - cy) * breath;
+        }
         
         let light = Math.sin(seed.seed * 4 + now * 0.002);
         let microDetail = Math.sin(seed.seed * 17 + now * 0.003) * 0.3;
@@ -545,42 +567,43 @@ function draw() {
         
         let rVal, gVal, bVal, alpha;
         
+        // Luminous color bands
         if (petalCurvature < 0.05) {
             let t = petalCurvature / 0.05;
-            rVal = 130 * (1 - t) + 190 * t;
-            gVal = 5 * (1 - t) + 20 * t;
-            bVal = 25 * (1 - t) + 55 * t;
-            alpha = 0.97;
+            rVal = 170 * (1 - t) + 215 * t;
+            gVal = 15 * (1 - t) + 25 * t;
+            bVal = 35 * (1 - t) + 55 * t;
+            alpha = 0.98;
         } else if (petalCurvature < 0.20) {
             let t = (petalCurvature - 0.05) / 0.15;
-            rVal = 190 * (1 - t) + 255 * t;
-            gVal = 20 * (1 - t) + 50 * t;
-            bVal = 55 * (1 - t) + 110 * t;
-            alpha = 0.96;
+            rVal = 215 * (1 - t) + 255 * t;
+            gVal = 25 * (1 - t) + 45 * t;
+            bVal = 55 * (1 - t) + 105 * t;
+            alpha = 0.97;
         } else if (petalCurvature < 0.45) {
             let t = (petalCurvature - 0.20) / 0.25;
             rVal = 255;
-            gVal = 50 * (1 - t) + 90 * t;
-            bVal = 110 * (1 - t) + 150 * t;
-            alpha = 0.95;
+            gVal = 45 * (1 - t) + 85 * t;
+            bVal = 105 * (1 - t) + 145 * t;
+            alpha = 0.96;
         } else if (petalCurvature < 0.70) {
             let t = (petalCurvature - 0.45) / 0.25;
             rVal = 255;
-            gVal = 90 * (1 - t) + 145 * t;
-            bVal = 150 * (1 - t) + 190 * t;
-            alpha = 0.94;
+            gVal = 85 * (1 - t) + 140 * t;
+            bVal = 145 * (1 - t) + 190 * t;
+            alpha = 0.95;
         } else if (petalCurvature < 0.88) {
             let t = (petalCurvature - 0.70) / 0.18;
             rVal = 255;
-            gVal = 145 * (1 - t) + 195 * t;
+            gVal = 140 * (1 - t) + 200 * t;
             bVal = 190 * (1 - t) + 220 * t;
-            alpha = 0.93;
+            alpha = 0.94;
         } else {
             let t = (petalCurvature - 0.88) / 0.12;
             rVal = 255;
-            gVal = 195 * (1 - t) + 240 * t;
-            bVal = 220 * (1 - t) + 235 * t;
-            alpha = 0.92;
+            gVal = 200 * (1 - t) + 245 * t;
+            bVal = 220 * (1 - t) + 230 * t;
+            alpha = 0.93;
         }
         
         let waveLuminance = (pixelWave + 1.0) * 0.5 * 14; 
@@ -588,10 +611,12 @@ function draw() {
         gVal += waveLuminance * 0.4;
         bVal += waveLuminance * 0.7;
         
-        if (centerRatio < 0.3) {
-            rVal = 255; 
-            gVal = Math.max(gVal * 0.4, 40); 
-            bVal = Math.max(bVal * 0.6, 90); 
+        // Deep shadows
+        if (centerRatio < 0.35) {
+            let coreT = centerRatio / 0.35;
+            rVal = rVal * (0.45 + 0.55 * coreT); 
+            gVal = gVal * (0.30 + 0.70 * coreT); 
+            bVal = bVal * (0.35 + 0.65 * coreT); 
         }
         
         let shadowEffect = 0.70 + depthShadow * 0.30;
@@ -604,6 +629,12 @@ function draw() {
         gVal = cloudCol.g * (1 - localEased) + gVal * localEased;
         bVal = cloudCol.b * (1 - localEased) + bVal * localEased;
         
+        // --- STRICT VIBRANCY FLOOR CLAMP ---
+        // Prevents any point in the core from becoming muddy or near-black
+        if (rVal < 155) rVal = 155; // Warm Crimson Red minimum
+        if (gVal < 25) gVal = 25;   // Deep Rose Pink green-element minimum
+        if (bVal < 50) bVal = 50;   // Royal Magenta blue-element minimum
+
         let dofFactor = (rz + 1.5) / 3.0; 
         let size = 1.35 + dofFactor * 1.45 + (light + microDetail) * 0.4;
         size += (3.5 * (1 - localEased));
@@ -611,11 +642,11 @@ function draw() {
         let isDewdrop = seed.dewdrop && (localEased > 0.8);
         if (isDewdrop) {
             let twinkle = (Math.sin(now * 0.0035 + seed.seed * 10) + 1) * 0.5;
-            rVal = 225;
-            gVal = 248;
+            rVal = 230;
+            gVal = 250;
             bVal = 255;
-            alpha = 0.65 + twinkle * 0.35;
-            size += 0.8 + twinkle * 0.7; 
+            alpha = 0.75 + twinkle * 0.25;
+            size += 1.0 + twinkle * 0.9; 
         }
         
         let renderObj = flowerRenderPool[i];
@@ -626,7 +657,7 @@ function draw() {
         renderObj.g = gVal;
         renderObj.b = bVal;
         renderObj.a = alpha * 255;
-        renderObj.isHighlight = (((i ^ frameCount) % 73) === 0 && morphProgress > 0.72) && !isDewdrop;
+        renderObj.isHighlight = (((i ^ frameCount) % 67) === 0 && morphProgress > 0.72) && !isDewdrop;
         
         let normZ = (rz + 1.5) / 3.0;
         if (normZ < 0) normZ = 0; else if (normZ > 1) normZ = 1;
@@ -634,7 +665,6 @@ function draw() {
         bucketLists[bIndex][bucketSizes[bIndex]++] = i;
     }
     
-    // Draw sorted flower particles from back to front
     for (let b = 0; b < BUCKET_COUNT; b++) {
         const size = bucketSizes[b];
         const list = bucketLists[b];
@@ -644,17 +674,15 @@ function draw() {
             drawRect(p.x, p.y, p.size, p.r, p.g, p.b, p.a);
             
             if (p.isHighlight) {
-                drawRect(p.x - 0.3, p.y - 0.3, p.size + 1.1, 255, 238, 195, 165);
+                drawRect(p.x - 0.3, p.y - 0.3, p.size + 1.1, 255, 242, 210, 180);
             }
         }
-        bucketSizes[b] = 0; // Reset bucket for next frame
+        bucketSizes[b] = 0; 
     }
     
-    // Copy the offscreen frame buffer onto the display canvas with alpha blending
     offscreenCtx.putImageData(imgData, 0, 0);
     ctx.drawImage(offscreenCanvas, 0, 0);
     
-    // Draw foreground pollen particles
     if (morphProgress > 0.35) {
         let pollenAlpha = Math.min(1, (morphProgress - 0.35) / 0.45);
         for (let i = 0; i < pollenParticles.length; i++) {
@@ -667,11 +695,11 @@ function draw() {
                 p.x = canvas.width / 2 + (Math.random() - 0.5) * 50;
             }
             
-            let screenX = p.x + Math.sin(now * 0.0015) * 6 * morphProgress;
+            let screenX = p.x + Math.sin(now * 0.0015) * 6 * morphProgress + windSway;
             let heightFade = Math.max(0, Math.min(1, (p.y - (canvas.height / 2 - 250)) / 190));
             let particleAlpha = heightFade * pollenAlpha * (0.2 + 0.5 * Math.sin(now * 0.002 + p.seed));
             
-            ctx.fillStyle = `rgba(255, 215, 140, ${particleAlpha})`;
+            ctx.fillStyle = `rgba(255, 222, 150, ${particleAlpha})`;
             ctx.beginPath();
             ctx.arc(screenX, p.y, p.size, 0, Math.PI * 2);
             ctx.fill();
