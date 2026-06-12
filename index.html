@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>هدية</title>
+<style>
+body {
+    margin: 0;
+    background: radial-gradient(circle at center, #fff6f9 0%, #ffdce8 50%, #f7abc9 100%);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    overflow: hidden;
+}
+canvas {
+    filter: drop-shadow(0 20px 50px rgba(180, 40, 90, 0.25));
+}
+</style>
+</head>
+<body>
+
+<canvas id="rose" width="650" height="650"></canvas>
+
+<script>
+const canvas = document.getElementById("rose");
+const ctx = canvas.getContext("2d");
+
+// Create offscreen canvas for fast pixel manipulation
+const offscreenCanvas = document.createElement("canvas");
+offscreenCanvas.width = 650;
+offscreenCanvas.height = 650;
+const offscreenCtx = offscreenCanvas.getContext("2d");
+const imgData = offscreenCtx.createImageData(650, 650);
+const data32 = new Uint32Array(imgData.data.buffer);
+
+// Endianness detection for fast color packing
+const isLittleEndian = (() => {
+    const buf = new ArrayBuffer(4);
+    const buf8 = new Uint8Array(buf);
+    const buf32 = new Uint32Array(buf);
+    buf32[0] = 0x01020304;
+    return buf8[0] === 0x04;
+})();
+
+const packColor = isLittleEndian
+    ? (r, g, b, a) => (a << 24) | (b << 16) | (g << 8) | r
+    : (r, g, b, a) => (r << 24) | (g << 16) | (b << 8) | a;
+
+// Fast clamping boundary helper for raw buffer drawing
+function drawRect(startX, startY, size, r, g, b, a) {
+    const x0 = startX < 0 ? 0 : (startX > 650 ? 650 : Math.floor(startX));
+    const y0 = startY < 0 ? 0 : (startY > 650 ? 650 : Math.floor(startY));
+    const x1 = (startX + size) < 0 ? 0 : ((startX + size) > 650 ? 650 : Math.floor(startX + size));
+    const y1 = (startY + size) < 0 ? 0 : ((startY + size) > 650 ? 650 : Math.floor(startY + size));
+    
+    const ru = r < 0 ? 0 : (r > 255 ? 255 : Math.floor(r));
+    const gu = g < 0 ? 0 : (g > 255 ? 255 : Math.floor(g));
+    const bu = b < 0 ? 0 : (b > 255 ? 255 : Math.floor(b));
+    const au = a < 0 ? 0 : (a > 255 ? 255 : Math.floor(a));
+    
+    const c32 = packColor(ru, gu, bu, au);
+    for (let y = y0; y < y1; y++) {
+        const rowOffset = y * 650;
+        for (let x = x0; x < x1; x++) {
+            data32[rowOffset + x] = c32;
+        }
+    }
+}
+
+const startTime = performance.now();
+
+const FLOWER_COUNT = 12000; 
+const STEM_COUNT = 1800;
+const LEAF_COUNT = 800;
+const TOTAL_COUNT = FLOWER_COUNT + STEM_COUNT + LEAF_COUNT;
+
+const flowerPoints = [];
+const stemPoints = [];
+const leafPoints = [];
+const targetSeeds = [];
+
+const ambientSparkles = [];
+for (let i = 0; i < 45; i++) {
+    ambientSparkles.push({
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height,
+        size: Math.random() * 2.0 + 0.6,
+        speed: Math.random() * 0.25 + 0.12,
+        seed: Math.random() * 100
+    });
+}
+
+const pollenParticles = [];
+for (let i = 0; i < 30; i++) {
+    pollenParticles.push({
+        x: canvas.width / 2 + (Math.random() - 0.5) * 40,
+        y: canvas.height / 2 - 60 + (Math.random() - 0.5) * 40,
+        size: Math.random() * 1.6 + 0.6,
+        speedY: Math.random() * 0.35 + 0.2,
+        speedX: (Math.random() - 0.5) * 0.3,
+        seed: Math.random() * 100
+    });
+}
+
+const stemCoordsRec = { x: 0, y: 0 };
+const leafCoordsRec = { x: 0, y: 0 };
+const tempTargetRec = { x: 0, y: 0, r: 0 };
+
+function getStemCoordsRef(t, time, out) {
+    const stemLength = 400;
+    let x = -220 * t + 280 * t * t - 50 * t * t * t;
+    let y = t * stemLength;
+    
+    let swayX = Math.sin(t * 2.5 + time * 0.0015) * 7 * t;
+    let secondarySwayX = Math.sin(t * 1.2 - time * 0.0008) * 2 * t;
+    
+    out.x = x + swayX + secondarySwayX;
+    out.y = y;
+}
+
+function populateDynamicStem(index, total, time, out) {
+    let t = index / total;
+    getStemCoordsRef(t, time, stemCoordsRec);
+    let thickness = 1.8 + (1 - t) * 4.5;
+    
+    out.x = stemCoordsRec.x + (Math.random() - 0.5) * thickness;
+    out.y = -60 + stemCoordsRec.y + (Math.random() - 0.5) * 1.5;
+}
+
+function populateDynamicLeaf(index, total, time, out) {
+    let leafIndex = Math.floor(index / (total / 2));
+    let leafProgress = (index % (total / 2)) / (total / 2);
+    
+    let stemT = leafIndex === 0 ? 0.44 : 0.62;
+    getStemCoordsRef(stemT, time, stemCoordsRec);
+    
+    let u = leafProgress;
+    let hashVal = Math.sin(index * 12.9898 + 43758.5453) * 2;
+    let v = (hashVal - Math.floor(hashVal)) * 2 - 1;
+    
+    let w = 2.5 * u * (1 - u);
+    let leafLength = 45;
+    let leafWidth = 23;
+    
+    let leafX = v * w * leafWidth;
+    let leafY = u * leafLength;
+    
+    let leafAngle = leafIndex === 0 ? -2.3 : 2.3;
+    let leafFlutter = Math.sin(time * 0.002 + leafIndex * 1.5) * 0.08;
+    let activeAngle = leafAngle + leafFlutter;
+    
+    let cosA = Math.cos(activeAngle);
+    let sinA = Math.sin(activeAngle);
+    let rotatedX = leafX * cosA - leafY * sinA;
+    let rotatedY = leafX * sinA + leafY * cosA;
+    
+    let stemThickness = 1.5 + (1 - stemT) * 4;
+    let stemRadius = stemThickness / 2;
+    
+    let borderShiftX = -stemRadius * sinA;
+    let borderShiftY = stemRadius * cosA;
+    
+    out.x = stemCoordsRec.x + rotatedX + borderShiftX + (Math.random() - 0.5) * 1.2;
+    out.y = -60 + stemCoordsRec.y + rotatedY + borderShiftY + (Math.random() - 0.5) * 1.2;
+}
+
+function populateDynamicRose(t, time, out) {
+    let pulse = 1 + 0.08 * Math.sin(time * 0.0015);
+    let wave1 = Math.sin(3 * t + time * 0.0014) * 8.5;
+    let wave2 = Math.sin(6 * t - time * 0.0008) * 3.5;
+    let waveDetail = Math.cos(9 * t + time * 0.002) * 1.5;
+    
+    let baseR = 210 * Math.pow(Math.sin(3 * t), 2);
+    let detail1 = 15 * Math.sin(9 * t) * Math.cos(time * 0.0018);
+    let detail2 = 8 * Math.sin(12 * t + 1.5) * Math.sin(time * 0.0013);
+    let detail3 = 5 * Math.cos(15 * t) * Math.cos(time * 0.0016);
+    
+    let r = baseR * pulse + wave1 + wave2 + waveDetail + detail1 + detail2 + detail3;
+    let headSwayX = Math.sin(time * 0.0015) * 6;
+    
+    out.x = r * Math.cos(t) + headSwayX;
+    out.y = r * Math.sin(t) - 60;
+    out.r = r;
+}
+
+function getRoseRadius(t, time) {
+    let pulse = 1 + 0.08 * Math.sin(time * 0.0015);
+    let wave1 = Math.sin(3 * t + time * 0.0014) * 8.5;
+    let wave2 = Math.sin(6 * t - time * 0.0008) * 3.5;
+    let waveDetail = Math.cos(9 * t + time * 0.002) * 1.5;
+    
+    let baseR = 210 * Math.pow(Math.sin(3 * t), 2);
+    let detail1 = 15 * Math.sin(9 * t) * Math.cos(time * 0.0018);
+    let detail2 = 8 * Math.sin(12 * t + 1.5) * Math.sin(time * 0.0013);
+    let detail3 = 5 * Math.cos(15 * t) * Math.cos(time * 0.0016);
+    
+    return baseR * pulse + wave1 + wave2 + waveDetail + detail1 + detail2 + detail3;
+}
+
+function generateCloudCoordinate() {
+    const puffs = [
+        { x: 0.0, y: 0.12, z: 0.0, r: 0.48 },      
+        { x: -0.34, y: -0.02, z: 0.08, r: 0.36 },  
+        { x: 0.34, y: -0.02, z: -0.08, r: 0.36 },  
+        { x: -0.18, y: -0.14, z: 0.10, r: 0.28 },  
+        { x: 0.18, y: -0.14, z: -0.10, r: 0.28 }   
+    ];
+    
+    const puff = puffs[Math.floor(Math.random() * puffs.length)];
+    const u = Math.random();
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+    const dist = puff.r * Math.pow(u, 0.6); 
+    
+    return {
+        x: puff.x + dist * Math.sin(phi) * Math.cos(theta),
+        y: puff.y + dist * Math.sin(phi) * Math.sin(theta),
+        z: puff.z + dist * Math.cos(phi)
+    };
+}
+
+// Precalculate static cloud colors to eliminate runtime object allocation overhead
+const precalculatedCloudColors = [];
+for (let i = 0; i < TOTAL_COUNT + 1000; i++) {
+    let r, g, b;
+    let mix = Math.sin(i * 0.08); 
+    if (mix < -0.3) {
+        r = 150; g = 15; b = 35;
+    } else if (mix < 0.3) {
+        r = 255; g = 110; b = 150;
+    } else {
+        r = 255; g = 180; b = 200;
+    }
+    precalculatedCloudColors.push({ r, g, b });
+}
+
+for(let i = 0; i < FLOWER_COUNT; i++) {
+    let p = generateCloudCoordinate();
+    flowerPoints.push({
+        x: p.x, 
+        y: p.y + 0.12, 
+        z: p.z
+    });
+    
+    let targetU = Math.random() * Math.PI * 2;
+    let targetV = Math.random() * Math.PI;
+    targetSeeds.push({
+        type: 'flower',
+        seed: targetU,
+        v: targetV,
+        dewdrop: Math.random() < 0.004
+    });
+}
+
+for(let i = 0; i < STEM_COUNT; i++) {
+    let p = generateCloudCoordinate();
+    stemPoints.push({
+        x: p.x * 0.95,
+        y: (p.y + 0.12) * 0.95,
+        z: p.z * 0.95
+    });
+    targetSeeds.push({
+        type: 'stem',
+        index: i,
+        total: STEM_COUNT
+    });
+}
+
+for(let i = 0; i < LEAF_COUNT; i++) {
+    let p = generateCloudCoordinate();
+    leafPoints.push({
+        x: p.x * 0.9,
+        y: (p.y + 0.12) * 0.9,
+        z: p.z * 0.9
+    });
+    targetSeeds.push({
+        type: 'leaf',
+        index: i,
+        total: LEAF_COUNT
+    });
+}
+
+const flowerRenderPool = [];
+for (let i = 0; i < FLOWER_COUNT; i++) {
+    flowerRenderPool.push({ x: 0, y: 0, size: 0, r: 0, g: 0, b: 0, a: 0, isHighlight: false });
+}
+
+// Depth sorting bins - fast linear-time sorting
+const BUCKET_COUNT = 120;
+const bucketLists = Array.from({ length: BUCKET_COUNT }, () => new Int32Array(FLOWER_COUNT));
+const bucketSizes = new Int32Array(BUCKET_COUNT);
+
+function smootherstep(t) {
+    return t * t * t * (t * (6 * t - 15) + 10);
+}
+
+function getLocalProgress(global, start, end) {
+    if (global <= start) return 0;
+    if (global >= end) return 1;
+    return smootherstep((global - start) / (end - start));
+}
+
+let frameCount = 0;
+
+function draw() {
+    // Clear back buffer (fully transparent)
+    data32.fill(0);
+    
+    const now = performance.now();
+    const elapsed = now - startTime;
+    
+    const morphStart = 3000;  
+    const morphDuration = 4800;  
+    let morphProgress = 0;
+    
+    if (elapsed > morphStart) {
+        morphProgress = (elapsed - morphStart) / morphDuration;
+        if (morphProgress > 1) morphProgress = 1;
+    }
+    
+    const activeGlobalAngle = elapsed * 0.00025;
+    let bob = Math.sin(elapsed * 0.0018) * 12 * Math.pow(1 - morphProgress, 1.5);
+
+    // Draw base glows and elements directly to screen context
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    if (morphProgress > 0.05) {
+        let pulseGlow = 140 + 15 * Math.sin(now * 0.0015);
+        let grad = ctx.createRadialGradient(canvas.width / 2, canvas.height / 2 - 60, 10, canvas.width / 2, canvas.height / 2 - 60, pulseGlow);
+        grad.addColorStop(0, `rgba(255, 225, 235, ${0.15 * morphProgress})`);
+        grad.addColorStop(0.5, `rgba(255, 182, 193, ${0.06 * morphProgress})`);
+        grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(canvas.width / 2, canvas.height / 2 - 60, pulseGlow, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    
+    for (let i = 0; i < ambientSparkles.length; i++) {
+        let p = ambientSparkles[i];
+        p.y -= p.speed;
+        if (p.y < -10) {
+            p.y = canvas.height + 10;
+            p.x = Math.random() * canvas.width;
+        }
+        let pulseX = p.x + Math.sin(now * 0.0008 + p.seed) * 18 * morphProgress;
+        let opacity = (0.2 + 0.45 * Math.sin(now * 0.0018 + p.seed)) * morphProgress;
+        
+        ctx.fillStyle = `rgba(255, 235, 242, ${opacity})`;
+        ctx.beginPath();
+        ctx.arc(pulseX, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    
+    // STEM Calculations and buffer drawing
+    for(let i = 0; i < STEM_COUNT; i++) {
+        let seed = targetSeeds[FLOWER_COUNT + i];
+        let stemT = seed.index / seed.total;
+        
+        let delayStart = 0.05 + stemT * 0.15;
+        let localEased = getLocalProgress(morphProgress, delayStart, delayStart + 0.35);
+        
+        let activeAngle = activeGlobalAngle * (1 - localEased);
+        let pt = stemPoints[seed.index];
+        let rx = pt.x * Math.cos(activeAngle) - pt.z * Math.sin(activeAngle);
+        let ry = pt.y;
+        let rz = pt.x * Math.sin(activeAngle) + pt.z * Math.cos(activeAngle);
+        
+        const scale = 200;
+        const distance = 4;
+        const perspective = scale / (distance - rz);
+        let px = 325 + rx * 0.3 * perspective;
+        let py = 325 - ry * 0.3 * perspective;
+        
+        populateDynamicStem(seed.index, seed.total, now, stemCoordsRec);
+        let tx = 325 + stemCoordsRec.x;
+        let ty = 325 + stemCoordsRec.y;
+        
+        const swoopFactor = Math.sin(localEased * Math.PI);
+        const arcDirection = (Math.sin(seed.index * 2.7) > 0 ? 1 : -1);
+        const arcRadius = 35 + Math.sin(seed.index * 1.3) * 10;
+        const swoopX = arcDirection * arcRadius * swoopFactor;
+        const swoopY = -20 * swoopFactor; 
+
+        let x = px * (1 - localEased) + tx * localEased + swoopX;
+        let y = py * (1 - localEased) + ty * localEased + swoopY;
+        
+        y += bob;
+        
+        let jitterX = Math.sin(now * 0.0035 + seed.index * 13) * 0.7;
+        let jitterY = Math.cos(now * 0.0030 + seed.index * 11) * 0.7;
+        x += jitterX;
+        y += jitterY;
+        
+        let dx = stemCoordsRec.x;
+        let dy = stemCoordsRec.y + 60;
+        let dist = Math.sqrt(dx * dx + dy * dy);
+        let ang = Math.atan2(dy, dx);
+        let roseR = getRoseRadius(ang, now);
+        
+        if (dist < roseR + 8 && localEased > 0.5) {
+            continue;
+        }
+        
+        let cloudCol = precalculatedCloudColors[seed.index];
+        let greenVar = Math.sin(seed.index * 0.08 + now * 0.001) * 18;
+        let targetGreen = 110 + greenVar;
+        let targetRed = 45 + greenVar * 0.4;
+        let targetBlue = 55 + greenVar * 0.3;
+        
+        let red = cloudCol.r * (1 - localEased) + targetRed * localEased;
+        let green = cloudCol.g * (1 - localEased) + targetGreen * localEased;
+        let blue = cloudCol.b * (1 - localEased) + targetBlue * localEased;
+        
+        const sizePulse = swoopFactor * 1.2;
+        let size = (3.0 * (1 - localEased)) + 2.6 + sizePulse;
+        
+        drawRect(x, y, size, red, green, blue, 217);
+    }
+    
+    // LEAVES Calculations and buffer drawing
+    for(let i = 0; i < LEAF_COUNT; i++) {
+        let seed = targetSeeds[FLOWER_COUNT + STEM_COUNT + i];
+        let leafT = seed.index / seed.total;
+        
+        let delayStart = 0.20 + leafT * 0.12;
+        let localEased = getLocalProgress(morphProgress, delayStart, delayStart + 0.40);
+        
+        let activeAngle = activeGlobalAngle * (1 - localEased);
+        let pt = leafPoints[seed.index];
+        let rx = pt.x * Math.cos(activeAngle) - pt.z * Math.sin(activeAngle);
+        let ry = pt.y;
+        let rz = pt.x * Math.sin(activeAngle) + pt.z * Math.cos(activeAngle);
+        
+        const scale = 200;
+        const distance = 4;
+        const perspective = scale / (distance - rz);
+        let px = 325 + rx * 0.2 * perspective;
+        let py = 325 - ry * 0.2 * perspective;
+        
+        populateDynamicLeaf(seed.index, seed.total, now, leafCoordsRec);
+        let tx = 325 + leafCoordsRec.x;
+        let ty = 325 + leafCoordsRec.y;
+        
+        const swoopFactor = Math.sin(localEased * Math.PI);
+        const arcDirection = (Math.sin(seed.index * 1.9) > 0 ? 1 : -1);
+        const arcRadius = 45 + Math.sin(seed.index * 3.1) * 12;
+        const swoopX = arcDirection * arcRadius * swoopFactor;
+        const swoopY = -25 * swoopFactor; 
+
+        let x = px * (1 - localEased) + tx * localEased + swoopX;
+        let y = py * (1 - localEased) + ty * localEased + swoopY;
+        
+        y += bob;
+        
+        let jitterX = Math.sin(now * 0.0032 + seed.index * 9) * 0.7;
+        let jitterY = Math.cos(now * 0.0028 + seed.index * 8) * 0.7;
+        x += jitterX;
+        y += jitterY;
+        
+        let cloudCol = precalculatedCloudColors[seed.index + 200];
+        let leafVar = Math.sin(seed.index * 0.05 + now * 0.001) * 15;
+        let targetGreen = 135 + leafVar;
+        let targetRed = 55 + leafVar * 0.3;
+        let targetBlue = 70 + leafVar * 0.25;
+        
+        let red = cloudCol.r * (1 - localEased) + targetRed * localEased;
+        let green = cloudCol.g * (1 - localEased) + targetGreen * localEased;
+        let blue = cloudCol.b * (1 - localEased) + targetBlue * localEased;
+        
+        const sizePulse = swoopFactor * 1.2;
+        let size = (3.0 * (1 - localEased)) + 2.1 + sizePulse;
+        
+        drawRect(x, y, size, red, green, blue, 217);
+    }
+    
+    // FLOWER Calculations and depth-bin sorting
+    const now0028 = now * 0.0028;
+    const now0015 = now * 0.0015;
+    const now0012 = now * 0.0012;
+    
+    for(let i = 0; i < FLOWER_COUNT; i++) {
+        let seed = targetSeeds[i];
+        let normV = seed.v / Math.PI; 
+        
+        let delayStart = 0.35 + normV * 0.20; 
+        let localEased = getLocalProgress(morphProgress, delayStart, delayStart + 0.40);
+        
+        let activeAngle = activeGlobalAngle * (1 - localEased);
+        let pt = flowerPoints[i];
+        let rx = pt.x * Math.cos(activeAngle) - pt.z * Math.sin(activeAngle);
+        let ry = pt.y;
+        let rz = pt.x * Math.sin(activeAngle) + pt.z * Math.cos(activeAngle);
+        
+        const scale = 200;
+        const distance = 4;
+        const perspective = scale / (distance - rz);
+        let px = 325 + rx * perspective;
+        let py = 325 - ry * perspective;
+        
+        populateDynamicRose(seed.seed, now, tempTargetRec);
+        let tx = 325 + tempTargetRec.x;
+        let ty = 325 + tempTargetRec.y;
+        
+        let x = px * (1 - localEased) + tx * localEased;
+        let y = py * (1 - localEased) + ty * localEased;
+        
+        y += bob;
+
+        let ripplePhase = now0028 - normV * Math.PI * 4 + seed.seed * 1.5;
+        let pixelWave = Math.sin(ripplePhase);
+        
+        let activeSwirlFactor = 0.25 * Math.sin(localEased * Math.PI) + 0.02 * Math.sin(now0012 + seed.seed * 3);
+        if (localEased > 0) {
+            let cx = 325;
+            let cy = 265; 
+            let dx = x - cx;
+            let dy = y - cy;
+            let cosS = Math.cos(activeSwirlFactor);
+            let sinS = Math.sin(activeSwirlFactor);
+            x = cx + (dx * cosS - dy * sinS);
+            y = cy + (dx * sinS + dy * cosS);
+        }
+        
+        let radialRippleDisplacement = pixelWave * 3.8; 
+        x += Math.cos(seed.seed) * radialRippleDisplacement;
+        y += Math.sin(seed.seed) * radialRippleDisplacement;
+        
+        let jitterX = Math.sin(now * 0.004 + seed.seed * 11) * 0.75;
+        let jitterY = Math.cos(now * 0.0035 + seed.seed * 7) * 0.75;
+        x += jitterX;
+        y += jitterY;
+        
+        let light = Math.sin(seed.seed * 4 + now * 0.002);
+        let microDetail = Math.sin(seed.seed * 17 + now * 0.003) * 0.3;
+        
+        let waveTime = now0015;
+        let petalCurvature = Math.abs(Math.sin(3 * seed.seed + waveTime)); 
+        
+        let distFromCenter = Math.sqrt(tempTargetRec.x * tempTargetRec.x + (tempTargetRec.y + 60) * (tempTargetRec.y + 60));
+        let maxR = tempTargetRec.r || 185;
+        let centerRatio = Math.min(1, distFromCenter / (maxR * 1.05));
+        let depthShadow = (rz + 1.5) / 3; 
+        
+        let rVal, gVal, bVal, alpha;
+        
+        if (petalCurvature < 0.05) {
+            let t = petalCurvature / 0.05;
+            rVal = 130 * (1 - t) + 190 * t;
+            gVal = 5 * (1 - t) + 20 * t;
+            bVal = 25 * (1 - t) + 55 * t;
+            alpha = 0.97;
+        } else if (petalCurvature < 0.20) {
+            let t = (petalCurvature - 0.05) / 0.15;
+            rVal = 190 * (1 - t) + 255 * t;
+            gVal = 20 * (1 - t) + 50 * t;
+            bVal = 55 * (1 - t) + 110 * t;
+            alpha = 0.96;
+        } else if (petalCurvature < 0.45) {
+            let t = (petalCurvature - 0.20) / 0.25;
+            rVal = 255;
+            gVal = 50 * (1 - t) + 90 * t;
+            bVal = 110 * (1 - t) + 150 * t;
+            alpha = 0.95;
+        } else if (petalCurvature < 0.70) {
+            let t = (petalCurvature - 0.45) / 0.25;
+            rVal = 255;
+            gVal = 90 * (1 - t) + 145 * t;
+            bVal = 150 * (1 - t) + 190 * t;
+            alpha = 0.94;
+        } else if (petalCurvature < 0.88) {
+            let t = (petalCurvature - 0.70) / 0.18;
+            rVal = 255;
+            gVal = 145 * (1 - t) + 195 * t;
+            bVal = 190 * (1 - t) + 220 * t;
+            alpha = 0.93;
+        } else {
+            let t = (petalCurvature - 0.88) / 0.12;
+            rVal = 255;
+            gVal = 195 * (1 - t) + 240 * t;
+            bVal = 220 * (1 - t) + 235 * t;
+            alpha = 0.92;
+        }
+        
+        let waveLuminance = (pixelWave + 1.0) * 0.5 * 14; 
+        rVal += waveLuminance * 1.3;
+        gVal += waveLuminance * 0.4;
+        bVal += waveLuminance * 0.7;
+        
+        if (centerRatio < 0.3) {
+            rVal = 255; 
+            gVal = Math.max(gVal * 0.4, 40); 
+            bVal = Math.max(bVal * 0.6, 90); 
+        }
+        
+        let shadowEffect = 0.70 + depthShadow * 0.30;
+        rVal *= shadowEffect;
+        gVal *= shadowEffect;
+        bVal *= shadowEffect;
+        
+        let cloudCol = precalculatedCloudColors[i];
+        rVal = cloudCol.r * (1 - localEased) + rVal * localEased;
+        gVal = cloudCol.g * (1 - localEased) + gVal * localEased;
+        bVal = cloudCol.b * (1 - localEased) + bVal * localEased;
+        
+        let dofFactor = (rz + 1.5) / 3.0; 
+        let size = 1.35 + dofFactor * 1.45 + (light + microDetail) * 0.4;
+        size += (3.5 * (1 - localEased));
+        
+        let isDewdrop = seed.dewdrop && (localEased > 0.8);
+        if (isDewdrop) {
+            let twinkle = (Math.sin(now * 0.0035 + seed.seed * 10) + 1) * 0.5;
+            rVal = 225;
+            gVal = 248;
+            bVal = 255;
+            alpha = 0.65 + twinkle * 0.35;
+            size += 0.8 + twinkle * 0.7; 
+        }
+        
+        let renderObj = flowerRenderPool[i];
+        renderObj.x = x;
+        renderObj.y = y;
+        renderObj.size = size;
+        renderObj.r = rVal;
+        renderObj.g = gVal;
+        renderObj.b = bVal;
+        renderObj.a = alpha * 255;
+        renderObj.isHighlight = (((i ^ frameCount) % 73) === 0 && morphProgress > 0.72) && !isDewdrop;
+        
+        let normZ = (rz + 1.5) / 3.0;
+        if (normZ < 0) normZ = 0; else if (normZ > 1) normZ = 1;
+        let bIndex = Math.floor(normZ * (BUCKET_COUNT - 1));
+        bucketLists[bIndex][bucketSizes[bIndex]++] = i;
+    }
+    
+    // Draw sorted flower particles from back to front
+    for (let b = 0; b < BUCKET_COUNT; b++) {
+        const size = bucketSizes[b];
+        const list = bucketLists[b];
+        for (let j = 0; j < size; j++) {
+            const idx = list[j];
+            const p = flowerRenderPool[idx];
+            drawRect(p.x, p.y, p.size, p.r, p.g, p.b, p.a);
+            
+            if (p.isHighlight) {
+                drawRect(p.x - 0.3, p.y - 0.3, p.size + 1.1, 255, 238, 195, 165);
+            }
+        }
+        bucketSizes[b] = 0; // Reset bucket for next frame
+    }
+    
+    // Copy the offscreen frame buffer onto the display canvas with alpha blending
+    offscreenCtx.putImageData(imgData, 0, 0);
+    ctx.drawImage(offscreenCanvas, 0, 0);
+    
+    // Draw foreground pollen particles
+    if (morphProgress > 0.35) {
+        let pollenAlpha = Math.min(1, (morphProgress - 0.35) / 0.45);
+        for (let i = 0; i < pollenParticles.length; i++) {
+            let p = pollenParticles[i];
+            p.y -= p.speedY;
+            p.x += Math.sin(now * 0.0012 + p.seed) * 0.3 + p.speedX;
+            
+            if (p.y < canvas.height / 2 - 250) {
+                p.y = canvas.height / 2 - 60 + (Math.random() - 0.5) * 30;
+                p.x = canvas.width / 2 + (Math.random() - 0.5) * 50;
+            }
+            
+            let screenX = p.x + Math.sin(now * 0.0015) * 6 * morphProgress;
+            let heightFade = Math.max(0, Math.min(1, (p.y - (canvas.height / 2 - 250)) / 190));
+            let particleAlpha = heightFade * pollenAlpha * (0.2 + 0.5 * Math.sin(now * 0.002 + p.seed));
+            
+            ctx.fillStyle = `rgba(255, 215, 140, ${particleAlpha})`;
+            ctx.beginPath();
+            ctx.arc(screenX, p.y, p.size, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+    
+    frameCount++;
+    requestAnimationFrame(draw);
+}
+
+draw();
+</script>
+
+</body>
+</html>
