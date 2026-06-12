@@ -46,10 +46,10 @@ const offscreenCtx = offscreenCanvas.getContext("2d");
 const imgData = offscreenCtx.createImageData(800, 800);
 const data32 = new Uint32Array(imgData.data.buffer);
 
-// Balanced scale and coordinate centering to fit the entire rose & stem inside 800x800
-const MASTER_SCALE = 1.1;
+// Carefully proportioned scale and center coordinates to prevent flat-edge clipping
+const MASTER_SCALE = 1.05;
 const CENTER_X = 400;
-const CENTER_Y = 240; 
+const CENTER_Y = 280; 
 
 // Endianness detection
 const isLittleEndian = (() => {
