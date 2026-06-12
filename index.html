@@ -18,13 +18,13 @@ body {
     justify-content: center;
     align-items: center;
 }
-/* Responsive scale with desktop sizing limits */
+/* Scaled dynamically for mobile viewports, clamped for PC monitors */
 canvas {
     display: block;
-    width: 92vmin;
-    height: 92vmin;
-    max-width: 580px; 
-    max-height: 580px;
+    width: 95vmin; 
+    height: 95vmin;
+    max-width: 500px; /* Clamps desktop view to a comfortable size */
+    max-height: 500px;
     object-fit: contain;
     filter: drop-shadow(0 20px 50px rgba(180, 40, 90, 0.25));
 }
@@ -32,23 +32,25 @@ canvas {
 </head>
 <body>
 
-<canvas id="rose" width="650" height="650"></canvas>
+<!-- Upgraded canvas resolution to 800x800 for maximum clipping headroom -->
+<canvas id="rose" width="800" height="800"></canvas>
 
 <script>
 const canvas = document.getElementById("rose");
 const ctx = canvas.getContext("2d");
 
-// Offscreen canvas setup
+// Offscreen canvas setup (800x800 resolution)
 const offscreenCanvas = document.createElement("canvas");
-offscreenCanvas.width = 650;
-offscreenCanvas.height = 650;
+offscreenCanvas.width = 800;
+offscreenCanvas.height = 800;
 const offscreenCtx = offscreenCanvas.getContext("2d");
-const imgData = offscreenCtx.createImageData(650, 650);
+const imgData = offscreenCtx.createImageData(800, 800);
 const data32 = new Uint32Array(imgData.data.buffer);
 
-// Optimal scale and vertical positioning to prevent boundary clipping
-const MASTER_SCALE = 1.16;
-const CENTER_Y = 345; 
+// Master scaling and centering values for perfect framing
+const MASTER_SCALE = 1.4;
+const CENTER_X = 400;
+const CENTER_Y = 410; 
 
 // Endianness detection
 const isLittleEndian = (() => {
@@ -59,17 +61,17 @@ const isLittleEndian = (() => {
     return buf8[0] === 0x04;
 })();
 
-// Highly optimized rect drawer using fast clamps and loop unrolling for size 1/2
+// Optimized boundary clamps and loop unrolling for 800x800 pixel grid
 function drawRect(startX, startY, size, r, g, b, a) {
     let x0 = startX | 0;
     let y0 = startY | 0;
     let x1 = (startX + size) | 0;
     let y1 = (startY + size) | 0;
     
-    if (x0 < 0) x0 = 0; else if (x0 > 650) x0 = 650;
-    if (y0 < 0) y0 = 0; else if (y0 > 650) y0 = 650;
-    if (x1 < 0) x1 = 0; else if (x1 > 650) x1 = 650;
-    if (y1 < 0) y1 = 0; else if (y1 > 650) y1 = 650;
+    if (x0 < 0) x0 = 0; else if (x0 > 800) x0 = 800;
+    if (y0 < 0) y0 = 0; else if (y0 > 800) y0 = 800;
+    if (x1 < 0) x1 = 0; else if (x1 > 800) x1 = 800;
+    if (y1 < 0) y1 = 0; else if (y1 > 800) y1 = 800;
     
     const dx = x1 - x0;
     const dy = y1 - y0;
@@ -85,17 +87,17 @@ function drawRect(startX, startY, size, r, g, b, a) {
         : (ru << 24) | (gu << 16) | (bu << 8) | au;
         
     if (dx === 1 && dy === 1) {
-        data32[y0 * 650 + x0] = c32;
+        data32[y0 * 800 + x0] = c32;
     } else if (dx === 2 && dy === 2) {
-        const row0 = y0 * 650;
-        const row1 = row0 + 650;
+        const row0 = y0 * 800;
+        const row1 = row0 + 800;
         data32[row0 + x0] = c32;
         data32[row0 + x0 + 1] = c32;
         data32[row1 + x0] = c32;
         data32[row1 + x0 + 1] = c32;
     } else {
         for (let y = y0; y < y1; y++) {
-            const rowOffset = y * 650;
+            const rowOffset = y * 800;
             for (let x = x0; x < x1; x++) {
                 data32[rowOffset + x] = c32;
             }
@@ -361,15 +363,19 @@ function draw() {
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+    // Dynamic, centered ambient glows
+    let centerX = canvas.width / 2;
+    let centerY = CENTER_Y - 60;
+
     if (morphProgress > 0.05) {
-        let pulseGlow = 145 + 18 * Math.sin(now * 0.0015);
-        let grad = ctx.createRadialGradient(canvas.width / 2, canvas.height / 2 - 60, 10, canvas.width / 2, canvas.height / 2 - 60, pulseGlow);
+        let pulseGlow = 180 + 20 * Math.sin(now * 0.0015);
+        let grad = ctx.createRadialGradient(centerX, centerY, 10, centerX, centerY, pulseGlow);
         grad.addColorStop(0, `rgba(255, 215, 230, ${0.18 * morphProgress})`);
         grad.addColorStop(0.5, `rgba(255, 160, 185, ${0.07 * morphProgress})`);
         grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
         ctx.fillStyle = grad;
         ctx.beginPath();
-        ctx.arc(canvas.width / 2, canvas.height / 2 - 60, pulseGlow, 0, Math.PI * 2);
+        ctx.arc(centerX, centerY, pulseGlow, 0, Math.PI * 2);
         ctx.fill();
     }
     
@@ -406,11 +412,11 @@ function draw() {
         const scale = 200;
         const distance = 4;
         const perspective = scale / (distance - rz);
-        let px = 325 + (rx * 0.3 * perspective) * MASTER_SCALE;
+        let px = CENTER_X + (rx * 0.3 * perspective) * MASTER_SCALE;
         let py = CENTER_Y - (ry * 0.3 * perspective) * MASTER_SCALE;
         
         populateDynamicStem(seed.index, seed.total, now, stemCoordsRec);
-        let tx = 325 + stemCoordsRec.x * MASTER_SCALE;
+        let tx = CENTER_X + stemCoordsRec.x * MASTER_SCALE;
         let ty = CENTER_Y + (stemCoordsRec.y + 60) * MASTER_SCALE;
         
         const swoopFactor = Math.sin(localEased * Math.PI);
@@ -476,11 +482,11 @@ function draw() {
         const scale = 200;
         const distance = 4;
         const perspective = scale / (distance - rz);
-        let px = 325 + (rx * 0.2 * perspective) * MASTER_SCALE;
+        let px = CENTER_X + (rx * 0.2 * perspective) * MASTER_SCALE;
         let py = CENTER_Y - (ry * 0.2 * perspective) * MASTER_SCALE;
         
         populateDynamicLeaf(seed.index, seed.total, now, leafCoordsRec);
-        let tx = 325 + leafCoordsRec.x * MASTER_SCALE;
+        let tx = CENTER_X + leafCoordsRec.x * MASTER_SCALE;
         let ty = CENTER_Y + (leafCoordsRec.y + 60) * MASTER_SCALE;
         
         const swoopFactor = Math.sin(localEased * Math.PI);
@@ -540,11 +546,11 @@ function draw() {
         const scale = 200;
         const distance = 4;
         const perspective = scale / (distance - rz);
-        let px = 325 + (rx * perspective) * MASTER_SCALE;
+        let px = CENTER_X + (rx * perspective) * MASTER_SCALE;
         let py = CENTER_Y - (ry * perspective) * MASTER_SCALE;
         
         populateDynamicRose(seed.seed, now, tempTargetRec);
-        let tx = 325 + tempTargetRec.x * MASTER_SCALE;
+        let tx = CENTER_X + tempTargetRec.x * MASTER_SCALE;
         let ty = CENTER_Y + (tempTargetRec.y + 60) * MASTER_SCALE;
         
         let x = px * (1 - localEased) + tx * localEased;
@@ -557,7 +563,7 @@ function draw() {
         
         let activeSwirlFactor = 0.25 * Math.sin(localEased * Math.PI) + 0.02 * Math.sin(now0012 + seed.seed * 3);
         if (localEased > 0) {
-            let cx = 325;
+            let cx = CENTER_X;
             let cy = CENTER_Y; 
             let dx = x - cx;
             let dy = y - cy;
@@ -577,7 +583,7 @@ function draw() {
         y += jitterY;
 
         if (localEased > 0.5) {
-            let cx = 325;
+            let cx = CENTER_X;
             let cy = CENTER_Y;
             x = cx + (x - cx) * breath + windSway * (localEased - 0.5) * 2;
             y = cy + (y - cy) * breath;
@@ -715,13 +721,13 @@ function draw() {
             p.y -= p.speedY;
             p.x += Math.sin(now * 0.0012 + p.seed) * 0.3 + p.speedX;
             
-            if (p.y < canvas.height / 2 - 250) {
-                p.y = canvas.height / 2 - 60 + (Math.random() - 0.5) * 30;
-                p.x = canvas.width / 2 + (Math.random() - 0.5) * 50;
+            if (p.y < centerY - 250) {
+                p.y = centerY + (Math.random() - 0.5) * 30;
+                p.x = centerX + (Math.random() - 0.5) * 50;
             }
             
             let screenX = p.x + Math.sin(now * 0.0015) * 6 * morphProgress + windSway;
-            let heightFade = Math.max(0, Math.min(1, (p.y - (canvas.height / 2 - 250)) / 190));
+            let heightFade = Math.max(0, Math.min(1, (p.y - (centerY - 250)) / 190));
             let particleAlpha = heightFade * pollenAlpha * (0.2 + 0.5 * Math.sin(now * 0.002 + p.seed));
             
             ctx.fillStyle = `rgba(255, 222, 150, ${particleAlpha})`;
