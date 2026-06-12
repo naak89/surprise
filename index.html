@@ -18,11 +18,11 @@ body {
     justify-content: center;
     align-items: center;
 }
-/* Fully responsive canvas scaling for desktop and mobile viewports */
+/* Responsive canvas scaling across desktop and mobile viewports */
 canvas {
     display: block;
-    width: 95vmin; 
-    height: 95vmin;
+    width: 90vmin; 
+    height: 90vmin;
     max-width: 600px; 
     max-height: 600px;
     object-fit: contain;
@@ -46,10 +46,10 @@ const offscreenCtx = offscreenCanvas.getContext("2d");
 const imgData = offscreenCtx.createImageData(800, 800);
 const data32 = new Uint32Array(imgData.data.buffer);
 
-// Optimized scale and center parameters to eliminate coordinate clipping on all edges
-const MASTER_SCALE = 0.85;
+// Carefully proportioned scale and center coordinates to prevent flat-edge clipping
+const MASTER_SCALE = 1.05;
 const CENTER_X = 400;
-const CENTER_Y = 320; 
+const CENTER_Y = 280; 
 
 // Endianness detection
 const isLittleEndian = (() => {
